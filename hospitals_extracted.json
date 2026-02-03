@@ -18,7 +18,8 @@
     "web_address": "https://www.shelbybaptistmedicalcenter.com/",
     "control": "Church operated, Nongovernment, not-for-profit",
     "services": "General medical and surgical",
-    "staffed_beds": "231"
+    "staffed_beds": "231",
+    "personnel": ""
   },
   {
     "name": "NOLAND HOSPITAL SHELBY",
@@ -39,7 +40,8 @@
     "web_address": "www.nolandhospitals.com",
     "control": "Other not-for-profit (including NFP Corporation)",
     "services": "Acute long-term care hospital",
-    "staffed_beds": "52"
+    "staffed_beds": "52",
+    "personnel": ""
   },
   {
     "name": "RUSSELL MEDICAL",
@@ -60,7 +62,8 @@
     "web_address": "www.russellmedcenter.com",
     "control": "Other not-for-profit (including NFP Corporation)",
     "services": "General medical and surgical",
-    "staffed_beds": "69"
+    "staffed_beds": "69",
+    "personnel": "525"
   },
   {
     "name": "ANDALUSIA HEALTH",
@@ -81,7 +84,8 @@
     "web_address": "www.andalusiahealth.com",
     "control": "Corporation, Investor-owned (for-profit)",
     "services": "General medical and surgical",
-    "staffed_beds": "40"
+    "staffed_beds": "40",
+    "personnel": "266"
   },
   {
     "name": "NOLAND HOSPITAL ANNISTON",
@@ -102,7 +106,8 @@
     "web_address": "www.nolandhealth.com",
     "control": "Other not-for-profit (including NFP Corporation)",
     "services": "Acute long-term care hospital",
-    "staffed_beds": "38"
+    "staffed_beds": "38",
+    "personnel": ""
   },
   {
     "name": "RMC ANNISTON",
@@ -123,7 +128,8 @@
     "web_address": "www.rmccares.org",
     "control": "Hospital district or authority, Government, Nonfederal",
     "services": "General medical and surgical",
-    "staffed_beds": "303"
+    "staffed_beds": "303",
+    "personnel": ""
   },
   {
     "name": "CLAY COUNTY HOSPITAL",
@@ -144,7 +150,8 @@
     "web_address": "www.claycountyhospital.com",
     "control": "County, Government, Nonfederal",
     "services": "General medical and surgical",
-    "staffed_beds": "129"
+    "staffed_beds": "129",
+    "personnel": ""
   },
   {
     "name": "ATHENS-LIMESTONE HOSPITAL",
@@ -165,7 +172,8 @@
     "web_address": "www.athenslimestonehospital.com",
     "control": "Hospital district or authority, Government, Nonfederal",
     "services": "General medical and surgical",
-    "staffed_beds": "71"
+    "staffed_beds": "71",
+    "personnel": ""
   },
   {
     "name": "NORTH ALABAMA SPECIALTY HOSPITAL",
@@ -186,7 +194,8 @@
     "web_address": "www.amgnash.com",
     "control": "Corporation, Investor-owned (for-profit)",
     "services": "Acute long-term care hospital",
-    "staffed_beds": "31"
+    "staffed_beds": "31",
+    "personnel": ""
   },
   {
     "name": "ATMORE COMMUNITY HOSPITAL",
@@ -207,7 +216,8 @@
     "web_address": "www.atmorehealth.org/",
     "control": "Other not-for-profit (including NFP Corporation)",
     "services": "General medical and surgical",
-    "staffed_beds": "33"
+    "staffed_beds": "33",
+    "personnel": ""
   },
   {
     "name": "NORTH BALDWIN INFIRMARY",
@@ -228,7 +238,8 @@
     "web_address": "https://www.infirmaryhealth.org/locations/north-baldwin-infirmary/",
     "control": "Other not-for-profit (including NFP Corporation)",
     "services": "General medical and surgical",
-    "staffed_beds": "113"
+    "staffed_beds": "113",
+    "personnel": "364"
   },
   {
     "name": "UAB MEDICAL WEST",
@@ -249,7 +260,8 @@
     "web_address": "www.medicalwesthospital.org",
     "control": "Hospital district or authority, Government, Nonfederal",
     "services": "General medical and surgical",
-    "staffed_beds": "200"
+    "staffed_beds": "200",
+    "personnel": "1181"
   },
   {
     "name": "BAPTIST HEALTH BROOKWOOD HOSPITAL",
@@ -270,7 +282,8 @@
     "web_address": "https://www.baptisthealthal.com/",
     "control": "Corporation, Investor-owned (for-profit)",
     "services": "General medical and surgical",
-    "staffed_beds": "595"
+    "staffed_beds": "595",
+    "personnel": ""
   },
   {
     "name": "BAPTIST HEALTH PRINCETON HOSPITAL",
@@ -291,7 +304,8 @@
     "web_address": "www.bhsala.com",
     "control": "Church operated, Nongovernment, not-for-profit",
     "services": "General medical and surgical",
-    "staffed_beds": "315"
+    "staffed_beds": "315",
+    "personnel": "1650"
   },
   {
     "name": "CHILDREN'S OF ALABAMA",
@@ -312,7 +326,8 @@
     "web_address": "www.childrensal.org",
     "control": "Other not-for-profit (including NFP Corporation)",
     "services": "Children's general medical and surgical",
-    "staffed_beds": "351"
+    "staffed_beds": "351",
+    "personnel": ""
   },
   {
     "name": "ENCOMPASS HEALTH LAKESHORE REHABILITATION HOSPITAL",
@@ -333,7 +348,8 @@
     "web_address": "www.encompasshealth.com/lakeshorerehab",
     "control": "Corporation, Investor-owned (for-profit)",
     "services": "Rehabilitation",
-    "staffed_beds": "100"
+    "staffed_beds": "100",
+    "personnel": ""
   },
   {
     "name": "GRANDVIEW MEDICAL CENTER",
@@ -354,7 +370,8 @@
     "web_address": "www.grandviewhealth.com",
     "control": "Corporation, Investor-owned (for-profit)",
     "services": "General medical and surgical",
-    "staffed_beds": "434"
+    "staffed_beds": "434",
+    "personnel": ""
   },
   {
     "name": "HILL CREST BEHAVIORAL HEALTH SERVICES",
@@ -375,7 +392,8 @@
     "web_address": "www.hillcrestbhs.com",
     "control": "Corporation, Investor-owned (for-profit)",
     "services": "Psychiatric",
-    "staffed_beds": "207"
+    "staffed_beds": "207",
+    "personnel": ""
   },
   {
     "name": "NOLAND HOSPITAL BIRMINGHAM",
@@ -396,7 +414,8 @@
     "web_address": "www.nolandhealth.com",
     "control": "Other not-for-profit (including NFP Corporation)",
     "services": "Acute long-term care hospital",
-    "staffed_beds": "45"
+    "staffed_beds": "45",
+    "personnel": ""
   },
   {
     "name": "SELECT SPECIALTY HOSPITAL-BIRMINGHAM",
@@ -417,7 +436,8 @@
     "web_address": "www.birmingham.selectspecialtyhospitals.com",
     "control": "Corporation, Investor-owned (for-profit)",
     "services": "Acute long-term care hospital",
-    "staffed_beds": "38"
+    "staffed_beds": "38",
+    "personnel": ""
   },
   {
     "name": "UAB CALLAHAN EYE HOSPITAL",
@@ -438,7 +458,8 @@
     "web_address": "www.uabmedicine.org/locations/uab-callahan-eye-hospital",
     "control": "Other not-for-profit (including NFP Corporation)",
     "services": "Eye, ear, nose and throat",
-    "staffed_beds": "20"
+    "staffed_beds": "20",
+    "personnel": ""
   },
   {
     "name": "UAB ST. VINCENT'S BIRMINGHAM",
@@ -459,7 +480,8 @@
     "web_address": "https://uabstvincents.org/locations/uab-st-vincents-birmingham/",
     "control": "Other not-for-profit (including NFP Corporation)",
     "services": "General medical and surgical",
-    "staffed_beds": "387"
+    "staffed_beds": "387",
+    "personnel": "1718"
   },
   {
     "name": "UAB ST. VINCENT'S EAST",
@@ -480,7 +502,8 @@
     "web_address": "https://healthcare.ascension.org/locations/alabama/albir/",
     "control": "Other not-for-profit (including NFP Corporation)",
     "services": "General medical and surgical",
-    "staffed_beds": "291"
+    "staffed_beds": "291",
+    "personnel": "1038"
   },
   {
     "name": "UNIVERSITY OF ALABAMA HOSPITAL",
@@ -501,7 +524,8 @@
     "web_address": "www.uabmedicine.org",
     "control": "",
     "services": "General medical and surgical",
-    "staffed_beds": "1308"
+    "staffed_beds": "1308",
+    "personnel": "13569"
   },
   {
     "name": "MARSHALL MEDICAL CENTER SOUTH",
@@ -522,7 +546,8 @@
     "web_address": "www.mmcenters.com//index.php/facilities/marshall_south",
     "control": "Hospital district or authority, Government, Nonfederal",
     "services": "General medical and surgical",
-    "staffed_beds": "107"
+    "staffed_beds": "107",
+    "personnel": ""
   },
   {
     "name": "D. W. MCMILLAN MEMORIAL HOSPITAL",
@@ -543,7 +568,8 @@
     "web_address": "www.dwmmh.org",
     "control": "Hospital district or authority, Government, Nonfederal",
     "services": "General medical and surgical",
-    "staffed_beds": "49"
+    "staffed_beds": "49",
+    "personnel": ""
   },
   {
     "name": "OCHSNER CHOCTAW GENERAL",
@@ -564,7 +590,8 @@
     "web_address": "www.choctawgeneral.com/cgh/",
     "control": "Other not-for-profit (including NFP Corporation)",
     "services": "General medical and surgical",
-    "staffed_beds": "25"
+    "staffed_beds": "25",
+    "personnel": ""
   },
   {
     "name": "J. PAUL JONES HOSPITAL",
@@ -585,7 +612,8 @@
     "web_address": "https://jpauljones.com/",
     "control": "",
     "services": "",
-    "staffed_beds": "21"
+    "staffed_beds": "21",
+    "personnel": ""
   },
   {
     "name": "ATRIUM HEALTH FLOYD CHEROKEE MEDICAL CENTER",
@@ -606,7 +634,8 @@
     "web_address": "www.cherokeemedicalcenter.com",
     "control": "Other not-for-profit (including NFP Corporation)",
     "services": "General medical and surgical",
-    "staffed_beds": "45"
+    "staffed_beds": "45",
+    "personnel": "144"
   },
   {
     "name": "BIBB MEDICAL CENTER",
@@ -627,7 +656,8 @@
     "web_address": "www.bibbmedicalcenter.com",
     "control": "County, Government, Nonfederal",
     "services": "General medical and surgical",
-    "staffed_beds": "166"
+    "staffed_beds": "166",
+    "personnel": ""
   },
   {
     "name": "WASHINGTON COUNTY HOSPITAL",
@@ -648,7 +678,8 @@
     "web_address": "www.wchnh.org",
     "control": "County, Government, Nonfederal",
     "services": "General medical and surgical",
-    "staffed_beds": "20"
+    "staffed_beds": "20",
+    "personnel": ""
   },
   {
     "name": "UAB ST. VINCENT'S CHILTON",
@@ -669,7 +700,8 @@
     "web_address": "https://www.stvhs.com/chilton/",
     "control": "Other not-for-profit (including NFP Corporation)",
     "services": "General medical and surgical",
-    "staffed_beds": "26"
+    "staffed_beds": "26",
+    "personnel": "93"
   },
   {
     "name": "CULLMAN REGIONAL MEDICAL CENTER",
@@ -690,7 +722,8 @@
     "web_address": "www.crmchospital.com",
     "control": "Other not-for-profit (including NFP Corporation)",
     "services": "General medical and surgical",
-    "staffed_beds": "145"
+    "staffed_beds": "145",
+    "personnel": ""
   },
   {
     "name": "THE SANCTUARY AT THE WOODLANDS",
@@ -711,7 +744,8 @@
     "web_address": "https://woodlandpsychiatric.com/",
     "control": "Corporation, Investor-owned (for-profit)",
     "services": "Psychiatric",
-    "staffed_beds": "40"
+    "staffed_beds": "40",
+    "personnel": ""
   },
   {
     "name": "LAKE MARTIN COMMUNITY HOSPITAL",
@@ -732,7 +766,8 @@
     "web_address": "www.lakemartincommunityhospital.com",
     "control": "Partnership, Investor-owned (for-profit)",
     "services": "General medical and surgical",
-    "staffed_beds": "25"
+    "staffed_beds": "25",
+    "personnel": ""
   },
   {
     "name": "EASTPOINTE HOSPITAL",
@@ -753,7 +788,8 @@
     "web_address": "https://altapointe.org/eastpointe-hospital/",
     "control": "Other not-for-profit (including NFP Corporation)",
     "services": "Psychiatric",
-    "staffed_beds": "82"
+    "staffed_beds": "82",
+    "personnel": "142"
   },
   {
     "name": "DECATUR MORGAN HOSPITAL",
@@ -774,7 +810,8 @@
     "web_address": "www.decaturgeneral.org",
     "control": "Hospital district or authority, Government, Nonfederal",
     "services": "General medical and surgical",
-    "staffed_beds": "110"
+    "staffed_beds": "110",
+    "personnel": ""
   },
   {
     "name": "WHITFIELD REGIONAL HOSPITAL",
@@ -795,7 +832,8 @@
     "web_address": "www.bwwmh.com",
     "control": "Hospital district or authority, Government, Nonfederal",
     "services": "General medical and surgical",
-    "staffed_beds": "47"
+    "staffed_beds": "47",
+    "personnel": ""
   },
   {
     "name": "ENCOMPASS HEALTH REHABILITATION HOSPITAL OF DOTHAN",
@@ -816,6 +854,7 @@
     "web_address": "www.encompasshealth.com/dothanrehab",
     "control": "Corporation, Investor-owned (for-profit)",
     "services": "Rehabilitation",
-    "staffed_beds": "51"
+    "staffed_beds": "51",
+    "personnel": ""
   }
 ]

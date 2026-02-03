@@ -35,6 +35,7 @@ class Hospital:
     control: str = ""
     services: str = ""
     staffed_beds: str = ""
+    personnel: str = ""
 
 
 def normalize_text(text: str) -> str:
@@ -237,6 +238,11 @@ def parse_hospital_entry(hospital: Hospital, text: str) -> None:
     if beds_match:
         hospital.staffed_beds = beds_match.group(1)
 
+    # Extract personnel count
+    personnel_match = re.search(r'Personnel:\s*(\d+)', text)
+    if personnel_match:
+        hospital.personnel = personnel_match.group(1)
+
 
 def save_to_csv(hospitals: list[Hospital], output_path: str) -> None:
     """Save hospital data to CSV file."""
@@ -248,7 +254,7 @@ def save_to_csv(hospitals: list[Hospital], output_path: str) -> None:
         'name', 'medicare_provider_number', 'address', 'city', 'county',
         'state', 'zip_code', 'telephone', 'primary_contact', 'coo', 'cfo',
         'cmo', 'cio', 'chr', 'cno', 'web_address', 'control', 'services',
-        'staffed_beds'
+        'staffed_beds', 'personnel'
     ]
 
     with open(output_path, 'w', newline='', encoding='utf-8') as f:
