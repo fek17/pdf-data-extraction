@@ -51,13 +51,45 @@ def normalize_text(text: str) -> str:
 
 
 def extract_text_from_pdf(pdf_path: str) -> str:
-    """Extract all text from PDF file."""
+    """Extract all text from PDF file, handling two-column layout."""
     full_text = ""
     doc = fitz.open(pdf_path)
+
     for page in doc:
-        text = page.get_text()
-        if text:
+        # Get text blocks with position info
+        blocks = page.get_text("dict")["blocks"]
+
+        # Filter to text blocks only and get their content with positions
+        text_items = []
+        for block in blocks:
+            if block["type"] == 0:  # Text block
+                for line in block["lines"]:
+                    line_text = ""
+                    for span in line["spans"]:
+                        line_text += span["text"]
+                    if line_text.strip():
+                        # Store (x0, y0, text) - position and content
+                        bbox = line["bbox"]
+                        text_items.append((bbox[0], bbox[1], line_text))
+
+        # Determine column split point (roughly middle of page)
+        page_width = page.rect.width
+        col_split = page_width / 2
+
+        # Separate into left and right columns
+        left_col = [(x, y, t) for x, y, t in text_items if x < col_split]
+        right_col = [(x, y, t) for x, y, t in text_items if x >= col_split]
+
+        # Sort each column by y position (top to bottom)
+        left_col.sort(key=lambda item: item[1])
+        right_col.sort(key=lambda item: item[1])
+
+        # Combine: left column first, then right column
+        for _, _, text in left_col:
             full_text += text + "\n"
+        for _, _, text in right_col:
+            full_text += text + "\n"
+
     doc.close()
     return normalize_text(full_text)
 
@@ -96,8 +128,9 @@ def parse_hospitals(text: str) -> list[Hospital]:
 
         # Detect hospital entry (starts with symbol or hospital name with provider number)
         # Hospital names are in caps followed by Medicare Provider Number in parentheses
-        # Include apostrophes (with possible lowercase after), hyphens, ampersands, commas, periods
-        hospital_match = re.match(r"^[★□⇑uenwW\s\t]*([A-Z][A-Za-z0-9\s\.'\-&,]+)\s*\((\d{6})\)", line)
+        # Prefix symbols are accreditation markers (★□⇑uenwW) - only consume them if followed by whitespace
+        # to avoid eating the first letter of hospital names like WHITFIELD or WASHINGTON
+        hospital_match = re.match(r"^(?:[★□⇑uenwW][\s\t]+|[\s\t])*([A-Z][A-Za-z0-9\s\.'\-&,]+)\s*\((\d{6})\)", line)
         if hospital_match:
             hospital = Hospital()
             hospital.name = hospital_match.group(1).strip()
@@ -119,7 +152,7 @@ def parse_hospitals(text: str) -> list[Hospital]:
                     break
                 if re.match(r'^[A-Z][A-Z\s\.]+[-—].+County$', next_line):
                     break
-                if re.match(r"^[★□⇑uenwW\s\t]*[A-Z][A-Za-z0-9\s\.'\-&,]+\s*\(\d{6}\)", next_line):
+                if re.match(r"^(?:[★□⇑uenwW][\s\t]+|[\s\t])*[A-Z][A-Za-z0-9\s\.'\-&,]+\s*\(\d{6}\)", next_line):
                     break
                 if next_line.startswith('Hospitals, U.S.') or next_line.startswith('© 2026'):
                     i += 1
