@@ -128,7 +128,12 @@ def parse_hospitals(text: str) -> list[Hospital]:
             continue
 
         # Skip cross-reference entries like "HOSPITAL NAME See Other Hospital Name"
-        if ' See ' in line:
+        if ' See ' in line or line.endswith(' See'):
+            i += 1
+            continue
+
+        # Skip sub-facility lines that are part of an "Includes" clause
+        if '(Includes ' in line or line.startswith('Includes '):
             i += 1
             continue
 
@@ -136,16 +141,19 @@ def parse_hospitals(text: str) -> list[Hospital]:
         # Hospital names are in caps followed by Medicare Provider Number in parentheses
         # Prefix symbols are accreditation markers (★□⇑uenwW) - only consume them if followed by whitespace
         # to avoid eating the first letter of hospital names like WHITFIELD or WASHINGTON
-        hospital_match = re.match(r"^(?:[★□⇑uenwW][\s\t]+|[\s\t])*([A-Z][A-Za-z0-9\s\.'\-&,]+)\s*\((\d{6})\)", line)
+        # Character class includes: letters, numbers, spaces, periods, apostrophes, hyphens,
+        # ampersands, commas, plus signs, forward slashes
+        hospital_match = re.match(r"^(?:[★□⇑uenwW][\s\t]+|[\s\t])*([A-Z][A-Za-z0-9\s\.'\-&,+/]+)\s*\((\d{6})\)", line)
 
         # Also match hospitals without provider numbers (e.g., military hospitals)
-        # Pattern: Hospital name (containing HOSPITAL, MEDICAL CENTER, etc.) followed by comma and address
+        # More generalized pattern: Any all-caps facility name followed by comma and street address
+        # Relies on earlier exclusion rules (See, Includes) to filter non-hospital entries
         hospital_no_id_match = None
         if not hospital_match:
             hospital_no_id_match = re.match(
                 r"^(?:[★□⇑uenwW][\s\t]+|[\s\t])*"
-                r"([A-Z][A-Za-z0-9\s\.'\-&,]*(?:HOSPITAL|MEDICAL CENTER|HEALTH CENTER|VA MEDICAL|AIR FORCE|ARMY|NAVY)[A-Za-z0-9\s\.'\-&,]*)"
-                r",\s*\d+\s+[A-Za-z]",  # Followed by comma and street address
+                r"([A-Z][A-Z0-9\s\.'\-&,+/]+)"  # All-caps name (with allowed special chars)
+                r",\s*\d+\s+[A-Za-z]",  # Followed by comma and street address (number + street name)
                 line
             )
 
@@ -174,12 +182,13 @@ def parse_hospitals(text: str) -> list[Hospital]:
                     break
                 if re.match(r'^[A-Z][A-Z\s\.]+[-—].+County$', next_line):
                     break
-                if re.match(r"^(?:[★□⇑uenwW][\s\t]+|[\s\t])*[A-Z][A-Za-z0-9\s\.'\-&,]+\s*\(\d{6}\)", next_line):
+                if re.match(r"^(?:[★□⇑uenwW][\s\t]+|[\s\t])*[A-Z][A-Za-z0-9\s\.'\-&,+/]+\s*\(\d{6}\)", next_line):
                     break
                 # Also check for hospitals without provider numbers (military hospitals)
+                # Generalized: all-caps name followed by comma and street address
                 if re.match(
                     r"^(?:[★□⇑uenwW][\s\t]+|[\s\t])*"
-                    r"[A-Z][A-Za-z0-9\s\.'\-&,]*(?:HOSPITAL|MEDICAL CENTER|HEALTH CENTER|VA MEDICAL|AIR FORCE|ARMY|NAVY)[A-Za-z0-9\s\.'\-&,]*"
+                    r"[A-Z][A-Z0-9\s\.'\-&,+/]+"
                     r",\s*\d+\s+[A-Za-z]",
                     next_line
                 ):
