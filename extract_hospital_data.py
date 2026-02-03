@@ -127,6 +127,11 @@ def parse_hospitals(text: str) -> list[Hospital]:
             i += 1
             continue
 
+        # Skip cross-reference entries like "HOSPITAL NAME See Other Hospital Name"
+        if ' See ' in line:
+            i += 1
+            continue
+
         # Detect hospital entry (starts with symbol or hospital name with provider number)
         # Hospital names are in caps followed by Medicare Provider Number in parentheses
         # Prefix symbols are accreditation markers (★□⇑uenwW) - only consume them if followed by whitespace
