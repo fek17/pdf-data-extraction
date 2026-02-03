@@ -221,8 +221,18 @@ def parse_hospitals_from_font_detection(text: str, hospital_entries: list[dict])
 
         # Find which state/county this entry belongs to
         # Look for the most recent county header before this entry
+        # Use provider number for more precise matching to avoid "See" references
+        provider_pattern = f"({entry.get('provider_number', '')})" if entry.get('provider_number') else None
+
         for i, line in enumerate(lines):
-            if entry_line in line or line.startswith(entry_line[:30]):
+            # Require exact substring match, or if we have provider number, match that too
+            is_match = entry_line in line
+            if not is_match and provider_pattern and provider_pattern in line:
+                # Fallback: match by provider number if name matches partially
+                if hospital.name.split()[0] in line:
+                    is_match = True
+
+            if is_match:
                 # Find the most recent state/county before this line
                 for idx, state, city, county in reversed(state_county_map):
                     if idx < i:
@@ -235,26 +245,47 @@ def parse_hospitals_from_font_detection(text: str, hospital_entries: list[dict])
         # Collect the full entry text (from this line until next hospital or section)
         entry_text = ""
         found_start = False
+        paren_depth = 0  # Track parentheses depth to handle "(Includes...)" sections
+
         for i, line in enumerate(lines):
             if not found_start:
-                if entry_line in line or line.startswith(entry_line[:30]):
+                # Require exact substring match for entry line
+                is_match = entry_line in line
+                if not is_match and provider_pattern and provider_pattern in line:
+                    if hospital.name.split()[0] in line:
+                        is_match = True
+
+                if is_match:
                     found_start = True
                     entry_text = line
+                    # Count opening/closing parens in first line
+                    paren_depth += line.count('(') - line.count(')')
             else:
                 line_stripped = line.strip()
+
                 # Stop at next hospital, county header, or page markers
+                # But only if we're not inside parentheses (e.g., "(Includes...)" section)
                 if re.match(r'^[A-Z][A-Z\s\.]+[-—].+County$', line_stripped):
                     break
                 if line_stripped.startswith('Hospitals, U.S.') or line_stripped.startswith('© 20'):
+                    paren_depth += line_stripped.count('(') - line_stripped.count(')')
                     continue
                 if line_stripped.startswith('Hospital, Medicare Provider'):
+                    paren_depth += line_stripped.count('(') - line_stripped.count(')')
                     continue
-                # Check if this line starts a new hospital entry (bold name with provider number pattern)
-                if re.match(r"^[★□⇑uenwW\s\t]*[A-Z][A-Za-z0-9\s\.'\-&,+/]+\s*\(\d{6}\)", line_stripped):
-                    break
-                # Check for military hospital pattern (all caps + comma + address)
-                if re.match(r"^[★□⇑uenwW\s\t]*[A-Z][A-Z0-9\s\.'\-&,+/]+,\s*\d+\s+[A-Za-z]", line_stripped):
-                    break
+
+                # Only check for new hospital patterns if we're not inside parentheses
+                # Check BEFORE updating paren_depth so closing paren on same line doesn't allow false match
+                if paren_depth <= 0:
+                    # Check if this line starts a new hospital entry (bold name with provider number pattern)
+                    if re.match(r"^[★□⇑uenwW\s\t]*[A-Z][A-Za-z0-9\s\.'\-&,+/]+\s*\(\d{6}\)", line_stripped):
+                        break
+                    # Check for military hospital pattern (all caps + comma + address)
+                    if re.match(r"^[★□⇑uenwW\s\t]*[A-Z][A-Z0-9\s\.'\-&,+/]+,\s*\d+\s+[A-Za-z]", line_stripped):
+                        break
+
+                # Update parentheses depth after pattern checks
+                paren_depth += line_stripped.count('(') - line_stripped.count(')')
 
                 entry_text += " " + line_stripped
 
