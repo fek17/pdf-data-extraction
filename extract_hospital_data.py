@@ -132,10 +132,26 @@ def parse_hospitals(text: str) -> list[Hospital]:
         # Prefix symbols are accreditation markers (★□⇑uenwW) - only consume them if followed by whitespace
         # to avoid eating the first letter of hospital names like WHITFIELD or WASHINGTON
         hospital_match = re.match(r"^(?:[★□⇑uenwW][\s\t]+|[\s\t])*([A-Z][A-Za-z0-9\s\.'\-&,]+)\s*\((\d{6})\)", line)
-        if hospital_match:
+
+        # Also match hospitals without provider numbers (e.g., military hospitals)
+        # Pattern: Hospital name (containing HOSPITAL, MEDICAL CENTER, etc.) followed by comma and address
+        hospital_no_id_match = None
+        if not hospital_match:
+            hospital_no_id_match = re.match(
+                r"^(?:[★□⇑uenwW][\s\t]+|[\s\t])*"
+                r"([A-Z][A-Za-z0-9\s\.'\-&,]*(?:HOSPITAL|MEDICAL CENTER|HEALTH CENTER|VA MEDICAL|AIR FORCE|ARMY|NAVY)[A-Za-z0-9\s\.'\-&,]*)"
+                r",\s*\d+\s+[A-Za-z]",  # Followed by comma and street address
+                line
+            )
+
+        if hospital_match or hospital_no_id_match:
             hospital = Hospital()
-            hospital.name = hospital_match.group(1).strip()
-            hospital.medicare_provider_number = hospital_match.group(2)
+            if hospital_match:
+                hospital.name = hospital_match.group(1).strip()
+                hospital.medicare_provider_number = hospital_match.group(2)
+            else:
+                hospital.name = hospital_no_id_match.group(1).strip()
+                hospital.medicare_provider_number = ""  # No provider number for military hospitals
             hospital.state = current_state
             hospital.county = current_county
             hospital.city = current_city
@@ -154,6 +170,14 @@ def parse_hospitals(text: str) -> list[Hospital]:
                 if re.match(r'^[A-Z][A-Z\s\.]+[-—].+County$', next_line):
                     break
                 if re.match(r"^(?:[★□⇑uenwW][\s\t]+|[\s\t])*[A-Z][A-Za-z0-9\s\.'\-&,]+\s*\(\d{6}\)", next_line):
+                    break
+                # Also check for hospitals without provider numbers (military hospitals)
+                if re.match(
+                    r"^(?:[★□⇑uenwW][\s\t]+|[\s\t])*"
+                    r"[A-Z][A-Za-z0-9\s\.'\-&,]*(?:HOSPITAL|MEDICAL CENTER|HEALTH CENTER|VA MEDICAL|AIR FORCE|ARMY|NAVY)[A-Za-z0-9\s\.'\-&,]*"
+                    r",\s*\d+\s+[A-Za-z]",
+                    next_line
+                ):
                     break
                 if next_line.startswith('Hospitals, U.S.') or next_line.startswith('© 2026'):
                     i += 1
