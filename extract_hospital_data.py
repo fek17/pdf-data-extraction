@@ -427,8 +427,8 @@ def parse_hospital_entry(hospital: Hospital, text: str) -> None:
     if service_match:
         hospital.services = service_match.group(1).strip()
 
-    # Extract staffed beds
-    beds_match = re.search(r'Staffed Beds:\s*(\d+)', text)
+    # Extract staffed beds - handle various spacing including non-breaking spaces
+    beds_match = re.search(r'Staffed\s*Beds[:\s\xa0]+(\d+)', text)
     if beds_match:
         hospital.staffed_beds = beds_match.group(1)
 
