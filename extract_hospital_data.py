@@ -51,15 +51,35 @@ def normalize_text(text: str) -> str:
     return text
 
 
-def extract_text_from_pdf(pdf_path: str) -> tuple[str, list[dict]]:
+# All US state names for header detection
+US_STATES = {
+    'ALABAMA', 'ALASKA', 'ARIZONA', 'ARKANSAS', 'CALIFORNIA', 'COLORADO',
+    'CONNECTICUT', 'DELAWARE', 'FLORIDA', 'GEORGIA', 'HAWAII', 'IDAHO',
+    'ILLINOIS', 'INDIANA', 'IOWA', 'KANSAS', 'KENTUCKY', 'LOUISIANA',
+    'MAINE', 'MARYLAND', 'MASSACHUSETTS', 'MICHIGAN', 'MINNESOTA',
+    'MISSISSIPPI', 'MISSOURI', 'MONTANA', 'NEBRASKA', 'NEVADA',
+    'NEW HAMPSHIRE', 'NEW JERSEY', 'NEW MEXICO', 'NEW YORK',
+    'NORTH CAROLINA', 'NORTH DAKOTA', 'OHIO', 'OKLAHOMA', 'OREGON',
+    'PENNSYLVANIA', 'RHODE ISLAND', 'SOUTH CAROLINA', 'SOUTH DAKOTA',
+    'TENNESSEE', 'TEXAS', 'UTAH', 'VERMONT', 'VIRGINIA', 'WASHINGTON',
+    'WEST VIRGINIA', 'WISCONSIN', 'WYOMING'
+}
+
+US_STATES_PATTERN = re.compile(r'^(' + '|'.join(sorted(US_STATES, key=len, reverse=True)) + r')$')
+
+
+def extract_text_from_pdf(pdf_path: str) -> tuple[list[str], list[dict], dict]:
     """Extract text from PDF with font info for hospital detection.
 
     Returns:
-        tuple: (full_text, hospital_entries) where hospital_entries is a list of
-               dicts with 'name', 'provider_number', 'line_text', 'x', 'y' keys
+        tuple: (all_lines, hospital_entries, page_line_ranges)
+            - all_lines: list of normalized text lines
+            - hospital_entries: list of dicts with hospital detection info including 'page_num'
+            - page_line_ranges: dict mapping page_num to (start_line_idx, end_line_idx)
     """
-    full_text = ""
+    all_lines = []
     hospital_entries = []
+    page_line_ranges = {}
     doc = fitz.open(pdf_path)
 
     # Skip patterns - headers and footers
@@ -71,7 +91,9 @@ def extract_text_from_pdf(pdf_path: str) -> tuple[str, list[dict]]:
         'Hospitals   A',
     ]
 
-    for page in doc:
+    for page_num, page in enumerate(doc):
+        start_line_idx = len(all_lines)
+
         blocks = page.get_text("dict")["blocks"]
         page_width = page.rect.width
         col_split = page_width / 2
@@ -101,7 +123,6 @@ def extract_text_from_pdf(pdf_path: str) -> tuple[str, list[dict]]:
                     # Detect hospital entries by font pattern:
                     # Look for bold hospital name + bold provider number
                     if len(spans) >= 2:
-                        # Find bold spans that could be hospital name
                         bold_name = ""
                         provider_num = ""
                         rest_text = ""
@@ -119,14 +140,9 @@ def extract_text_from_pdf(pdf_path: str) -> tuple[str, list[dict]]:
                             if span_bold and re.match(r'^\s*\(\d{6}\)\s*$', text):
                                 provider_num = re.search(r'\d{6}', text).group(0)
                             elif span_bold and not found_bold_name:
-                                # This could be the hospital name
                                 name_text = text.strip()
-                                # Normalize apostrophes in name
                                 name_text = name_text.replace('\u2019', "'").replace('\u2018', "'")
-                                # Check if it looks like a hospital name (mostly caps, reasonable length)
-                                # Allow apostrophes, periods, hyphens, dashes, ampersands, commas, +, /
                                 if name_text and len(name_text) > 5:
-                                    # Match if mostly uppercase letters with allowed punctuation
                                     if re.match(r"^[A-Z][A-Z0-9\s\.'\-\u2013\u2014&,+/]+$", name_text):
                                         bold_name = name_text
                                         found_bold_name = True
@@ -138,9 +154,8 @@ def extract_text_from_pdf(pdf_path: str) -> tuple[str, list[dict]]:
                             # Skip "See" cross-references
                             if rest_text.strip().startswith("See "):
                                 pass
-                            # Skip state names and county headers
-                            elif bold_name in ['ALABAMA', 'ALASKA', 'ARIZONA', 'ARKANSAS', 'CALIFORNIA',
-                                              'COLORADO', 'CONNECTICUT', 'DELAWARE', 'FLORIDA', 'GEORGIA']:
+                            # Skip state names
+                            elif bold_name in US_STATES:
                                 pass
                             # Check if it has a provider number or address pattern
                             elif provider_num or (rest_text.strip().startswith(",") and re.search(r'\d+\s+[A-Za-z]', rest_text)):
@@ -149,7 +164,8 @@ def extract_text_from_pdf(pdf_path: str) -> tuple[str, list[dict]]:
                                     'provider_number': provider_num,
                                     'line_text': normalize_text(line_text),
                                     'x': x,
-                                    'y': y
+                                    'y': y,
+                                    'page_num': page_num,
                                 })
 
                     # Add to column lists
@@ -163,52 +179,49 @@ def extract_text_from_pdf(pdf_path: str) -> tuple[str, list[dict]]:
         left_items.sort(key=lambda item: item[1])
         right_items.sort(key=lambda item: item[1])
 
-        # Combine columns
+        # Combine columns: left first, then right
         for _, _, text in left_items:
-            full_text += text + "\n"
+            all_lines.append(normalize_text(text))
         for _, _, text in right_items:
-            full_text += text + "\n"
+            all_lines.append(normalize_text(text))
+
+        page_line_ranges[page_num] = (start_line_idx, len(all_lines))
 
     doc.close()
-    return normalize_text(full_text), hospital_entries
+    return all_lines, hospital_entries, page_line_ranges
 
 
-def parse_hospitals_from_font_detection(text: str, hospital_entries: list[dict]) -> list[Hospital]:
+def parse_hospitals_from_font_detection(
+    lines: list[str],
+    hospital_entries: list[dict],
+    page_line_ranges: dict,
+) -> list[Hospital]:
     """Parse hospital entries using font-detected entries for reliable identification.
 
-    Args:
-        text: Full normalized text from PDF
-        hospital_entries: List of hospital entries detected by font analysis
-
-    Returns:
-        List of Hospital objects
+    Uses page-scoped searching: each hospital entry is matched only within its
+    own page's line range, avoiding cross-page mismatches.
     """
     hospitals = []
-    lines = text.split('\n')
-
-    # Build a mapping of state and county from the text
-    current_state = ""
-    current_county = ""
-    current_city = ""
 
     # First pass: identify state/county headers and their line positions
+    current_state = ""
     state_county_map = []  # List of (line_index, state, city, county)
 
     for i, line in enumerate(lines):
-        line = line.strip()
+        stripped = line.strip()
 
         # Detect state headers
-        state_match = re.match(r'^(ALABAMA|ALASKA|ARIZONA|ARKANSAS|CALIFORNIA|COLORADO|CONNECTICUT|DELAWARE|FLORIDA|GEORGIA|HAWAII|IDAHO|ILLINOIS|INDIANA|IOWA|KANSAS|KENTUCKY|LOUISIANA|MAINE|MARYLAND|MASSACHUSETTS|MICHIGAN|MINNESOTA|MISSISSIPPI|MISSOURI|MONTANA|NEBRASKA|NEVADA|NEW HAMPSHIRE|NEW JERSEY|NEW MEXICO|NEW YORK|NORTH CAROLINA|NORTH DAKOTA|OHIO|OKLAHOMA|OREGON|PENNSYLVANIA|RHODE ISLAND|SOUTH CAROLINA|SOUTH DAKOTA|TENNESSEE|TEXAS|UTAH|VERMONT|VIRGINIA|WASHINGTON|WEST VIRGINIA|WISCONSIN|WYOMING)$', line)
-        if state_match:
-            current_state = state_match.group(1)
+        if US_STATES_PATTERN.match(stripped):
+            current_state = stripped
             continue
 
-        # Detect city-county headers
-        county_match = re.match(r'^([A-Z][A-Z\s\.]+)[-—](.+\s+County)$', line)
+        # Detect city-county headers (e.g., "ABBEVILLE-Vermilion Parish")
+        # Note: first part must be ALL CAPS (city name), so no IGNORECASE
+        county_match = re.match(r'^([A-Z][A-Z\s\.]+)[-\u2013\u2014\u2014](.+\s+(?:County|Parish|Borough|Census Area|Municipality|city))$', stripped)
         if county_match:
-            current_city = county_match.group(1).strip()
-            current_county = county_match.group(2).strip()
-            state_county_map.append((i, current_state, current_city, current_county))
+            city = county_match.group(1).strip()
+            county = county_match.group(2).strip()
+            state_county_map.append((i, current_state, city, county))
 
     # Process each font-detected hospital entry
     for entry in hospital_entries:
@@ -216,142 +229,84 @@ def parse_hospitals_from_font_detection(text: str, hospital_entries: list[dict])
         hospital.name = entry['name']
         hospital.medicare_provider_number = entry.get('provider_number', '')
 
-        # Find the entry's line in the text to get surrounding context
         entry_line = entry['line_text']
+        page_num = entry['page_num']
 
-        # Find which state/county this entry belongs to
-        # Look for the most recent county header before this entry
-        for i, line in enumerate(lines):
-            if entry_line in line or line.startswith(entry_line[:30]):
-                # Find the most recent state/county before this line
-                for idx, state, city, county in reversed(state_county_map):
-                    if idx < i:
-                        hospital.state = state
-                        hospital.city = city
-                        hospital.county = county
-                        break
+        # Get the line range for this hospital's page
+        page_start, page_end = page_line_ranges[page_num]
+
+        # Find the entry's line within its page
+        entry_line_idx = None
+        for i in range(page_start, page_end):
+            if entry_line in lines[i]:
+                entry_line_idx = i
                 break
 
-        # Collect the full entry text (from this line until next hospital or section)
-        entry_text = ""
-        found_start = False
-        for i, line in enumerate(lines):
-            if not found_start:
-                if entry_line in line or line.startswith(entry_line[:30]):
-                    found_start = True
-                    entry_text = line
-            else:
-                line_stripped = line.strip()
-                # Stop at next hospital, county header, or page markers
-                if re.match(r'^[A-Z][A-Z\s\.]+[-—].+County$', line_stripped):
+        # Fallback: match by provider number within the page
+        if entry_line_idx is None and entry.get('provider_number'):
+            prov = f"({entry['provider_number']})"
+            first_word = hospital.name.split()[0]
+            for i in range(page_start, page_end):
+                if prov in lines[i] and first_word in lines[i]:
+                    entry_line_idx = i
                     break
-                if line_stripped.startswith('Hospitals, U.S.') or line_stripped.startswith('© 20'):
-                    continue
-                if line_stripped.startswith('Hospital, Medicare Provider'):
-                    continue
-                # Check if this line starts a new hospital entry (bold name with provider number pattern)
+
+        if entry_line_idx is None:
+            # Could not find the entry in the text - skip
+            hospitals.append(hospital)
+            continue
+
+        # Find the most recent state/county before this line
+        for idx, state, city, county in reversed(state_county_map):
+            if idx < entry_line_idx:
+                hospital.state = state
+                hospital.city = city
+                hospital.county = county
+                break
+
+        # Collect the full entry text from entry line until next hospital or section
+        entry_text = lines[entry_line_idx]
+        paren_depth = entry_text.count('(') - entry_text.count(')')
+
+        for i in range(entry_line_idx + 1, len(lines)):
+            line_stripped = lines[i].strip()
+
+            # Stop at county/city headers (city name is ALL CAPS)
+            if re.match(r'^[A-Z][A-Z\s\.]+[-\u2013\u2014\u2014](.+\s+(?:County|Parish|Borough|Census Area|Municipality|city))$', line_stripped):
+                break
+            # Stop at state headers
+            if line_stripped in US_STATES:
+                break
+            # Skip page headers/footers
+            if line_stripped.startswith('Hospitals, U.S.') or line_stripped.startswith('© 20'):
+                paren_depth += line_stripped.count('(') - line_stripped.count(')')
+                continue
+            if line_stripped.startswith('Hospital, Medicare Provider'):
+                paren_depth += line_stripped.count('(') - line_stripped.count(')')
+                continue
+            # Skip license/copyright boilerplate
+            if 'This document is licensed to' in line_stripped:
+                continue
+            if 'copyrighted by the American Hospital Association' in line_stripped:
+                continue
+            if 'Distribution or duplication is prohibited' in line_stripped:
+                continue
+
+            # Only check for new hospital patterns if not inside parentheses
+            if paren_depth <= 0:
                 if re.match(r"^[★□⇑uenwW\s\t]*[A-Z][A-Za-z0-9\s\.'\-&,+/]+\s*\(\d{6}\)", line_stripped):
                     break
-                # Check for military hospital pattern (all caps + comma + address)
                 if re.match(r"^[★□⇑uenwW\s\t]*[A-Z][A-Z0-9\s\.'\-&,+/]+,\s*\d+\s+[A-Za-z]", line_stripped):
                     break
 
-                entry_text += " " + line_stripped
+            # Update parentheses depth after pattern checks
+            paren_depth += line_stripped.count('(') - line_stripped.count(')')
+
+            entry_text += " " + line_stripped
 
         # Parse the hospital entry details
         parse_hospital_entry(hospital, entry_text)
         hospitals.append(hospital)
-
-    return hospitals
-
-
-def parse_hospitals(text: str) -> list[Hospital]:
-    """Legacy function - parse hospitals using regex patterns.
-
-    Note: For better accuracy, use parse_hospitals_from_font_detection() instead.
-    """
-    hospitals = []
-    current_state = ""
-    current_county = ""
-    current_city = ""
-
-    lines = text.split('\n')
-    i = 0
-
-    while i < len(lines):
-        line = lines[i].strip()
-
-        # Detect state headers
-        state_match = re.match(r'^(ALABAMA|ALASKA|ARIZONA|ARKANSAS|CALIFORNIA|COLORADO|CONNECTICUT|DELAWARE|FLORIDA|GEORGIA|HAWAII|IDAHO|ILLINOIS|INDIANA|IOWA|KANSAS|KENTUCKY|LOUISIANA|MAINE|MARYLAND|MASSACHUSETTS|MICHIGAN|MINNESOTA|MISSISSIPPI|MISSOURI|MONTANA|NEBRASKA|NEVADA|NEW HAMPSHIRE|NEW JERSEY|NEW MEXICO|NEW YORK|NORTH CAROLINA|NORTH DAKOTA|OHIO|OKLAHOMA|OREGON|PENNSYLVANIA|RHODE ISLAND|SOUTH CAROLINA|SOUTH DAKOTA|TENNESSEE|TEXAS|UTAH|VERMONT|VIRGINIA|WASHINGTON|WEST VIRGINIA|WISCONSIN|WYOMING)$', line)
-        if state_match:
-            current_state = state_match.group(1)
-            i += 1
-            continue
-
-        # Detect city-county headers
-        county_match = re.match(r'^([A-Z][A-Z\s\.]+)[-—](.+\s+County)$', line)
-        if county_match:
-            current_city = county_match.group(1).strip()
-            current_county = county_match.group(2).strip()
-            i += 1
-            continue
-
-        # Skip cross-references and sub-facilities
-        if ' See ' in line or line.endswith(' See') or '(Includes ' in line:
-            i += 1
-            continue
-
-        # Detect hospital entry with provider number
-        hospital_match = re.match(r"^(?:[★□⇑uenwW][\s\t]+|[\s\t])*([A-Z][A-Za-z0-9\s\.'\-&,+/]+)\s*\((\d{6})\)", line)
-
-        # Or hospital without provider number (generalized pattern)
-        hospital_no_id_match = None
-        if not hospital_match:
-            hospital_no_id_match = re.match(
-                r"^(?:[★□⇑uenwW][\s\t]+|[\s\t])*"
-                r"([A-Z][A-Z0-9\s\.'\-&,+/]+)"
-                r",\s*\d+\s+[A-Za-z]",
-                line
-            )
-
-        if hospital_match or hospital_no_id_match:
-            hospital = Hospital()
-            if hospital_match:
-                hospital.name = hospital_match.group(1).strip()
-                hospital.medicare_provider_number = hospital_match.group(2)
-            else:
-                hospital.name = hospital_no_id_match.group(1).strip()
-                hospital.medicare_provider_number = ""
-            hospital.state = current_state
-            hospital.county = current_county
-            hospital.city = current_city
-
-            entry_text = line
-            i += 1
-
-            # Read until next hospital or section
-            while i < len(lines):
-                next_line = lines[i].strip()
-                if re.match(r'^[A-Z][A-Z\s\.]+[-—].+County$', next_line):
-                    break
-                if re.match(r"^(?:[★□⇑uenwW][\s\t]+|[\s\t])*[A-Z][A-Za-z0-9\s\.'\-&,+/]+\s*\(\d{6}\)", next_line):
-                    break
-                if re.match(r"^(?:[★□⇑uenwW][\s\t]+|[\s\t])*[A-Z][A-Z0-9\s\.'\-&,+/]+,\s*\d+\s+[A-Za-z]", next_line):
-                    break
-                if next_line.startswith('Hospitals, U.S.') or next_line.startswith('© 20'):
-                    i += 1
-                    continue
-                if next_line.startswith('Hospital, Medicare Provider'):
-                    i += 1
-                    continue
-                entry_text += " " + next_line
-                i += 1
-
-            parse_hospital_entry(hospital, entry_text)
-            hospitals.append(hospital)
-            continue
-
-        i += 1
 
     return hospitals
 
@@ -361,9 +316,9 @@ def parse_hospital_entry(hospital: Hospital, text: str) -> None:
 
     # Extract address and zip code
     # Pattern: street address, Zip XXXXX-XXXX
-    zip_match = re.search(r'Zip\s+(\d{5}(?:–\d{4})?)', text)
+    zip_match = re.search(r'Zip\s+(\d{5}(?:[-\u2013]\d{4})?)', text)
     if zip_match:
-        hospital.zip_code = zip_match.group(1).replace('–', '-')
+        hospital.zip_code = zip_match.group(1).replace('\u2013', '-')
 
     # Extract address (between provider number/hospital name and Zip)
     addr_match = re.search(r'\(\d{6}\),?\s*(.+?),?\s*Zip', text)
@@ -371,22 +326,20 @@ def parse_hospital_entry(hospital: Hospital, text: str) -> None:
         hospital.address = addr_match.group(1).strip().rstrip(',')
     else:
         # Fallback for hospitals without provider numbers (e.g., VA hospitals)
-        # Look for address after hospital name (all caps followed by comma and street)
         addr_fallback = re.search(r'^[A-Z][A-Z\s\.\'\-&,+/]+,\s*(.+?),?\s*Zip', text)
         if addr_fallback:
             hospital.address = addr_fallback.group(1).strip().rstrip(',')
 
     # Clean up address - remove any accreditation symbols that may have been captured
     if hospital.address:
-        # Remove common accreditation symbols and clean up
-        hospital.address = re.sub(r'\s+[uenwWs□★⇑]\s*,?\s*$', '', hospital.address)
-        hospital.address = re.sub(r',\s+[uenwWs□★⇑]\s*,', ',', hospital.address)
+        hospital.address = re.sub(r'\s+[uenwWs\u25a1\u2605\u21d1]\s*,?\s*$', '', hospital.address)
+        hospital.address = re.sub(r',\s+[uenwWs\u25a1\u2605\u21d1]\s*,', ',', hospital.address)
         hospital.address = hospital.address.strip().rstrip(',')
 
     # Extract telephone
-    tel_match = re.search(r'tel\.\s*([\d/–\-]+)', text)
+    tel_match = re.search(r'tel\.\s*([\d/\u2013\-]+)', text)
     if tel_match:
-        hospital.telephone = tel_match.group(1).replace('–', '-')
+        hospital.telephone = tel_match.group(1).replace('\u2013', '-')
 
     # Extract contacts
     contact_patterns = {
@@ -412,7 +365,6 @@ def parse_hospital_entry(hospital: Hospital, text: str) -> None:
     if web_match:
         hospital.web_address = web_match.group(1).strip()
     else:
-        # Alternative pattern
         web_match = re.search(r'(https?://[^\s]+|www\.[^\s]+)', text)
         if web_match:
             hospital.web_address = web_match.group(1).strip()
@@ -481,10 +433,10 @@ def main():
     args = parser.parse_args()
 
     print(f"Extracting text from {args.pdf_path}...")
-    text, hospital_entries = extract_text_from_pdf(args.pdf_path)
+    lines, hospital_entries, page_line_ranges = extract_text_from_pdf(args.pdf_path)
 
     print("Parsing hospital data using font-based detection...")
-    hospitals = parse_hospitals_from_font_detection(text, hospital_entries)
+    hospitals = parse_hospitals_from_font_detection(lines, hospital_entries, page_line_ranges)
 
     print(f"Found {len(hospitals)} hospitals")
 
