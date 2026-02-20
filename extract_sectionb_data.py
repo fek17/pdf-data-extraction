@@ -28,7 +28,7 @@ class HospitalEntry:
     system_ceo: str = ""
     section: str = ""  # "Systems" or "Networks"
     hospital_name: str = ""
-    ownership_type: str = ""  # O=Owned, L=Leased, C=Contract-managed
+    ownership_type: str = ""  # O=Owned, L=Leased, C=Contract-managed, S=Sponsored, PART=Part of system
     staffed_beds: str = ""
     address: str = ""
     city: str = ""
@@ -158,7 +158,13 @@ def extract_section_b(pdf_path: str) -> list[HospitalEntry]:
         for block in blocks:
             if block["type"] != 0:
                 continue
-            for line in block["lines"]:
+            block_lines = block["lines"]
+            skip_line_indices = set()
+
+            for line_i, line in enumerate(block_lines):
+                if line_i in skip_line_indices:
+                    continue
+
                 spans = line["spans"]
                 bbox = line["bbox"]
                 x, y = bbox[0], bbox[1]
@@ -188,7 +194,7 @@ def extract_section_b(pdf_path: str) -> list[HospitalEntry]:
 
                     if has_bold_system_span:
                         header_match = re.match(
-                            r'^[w\s]*(\d{4}):\s+(.+?)\s*\(([A-Z]{2})\)\s*$',
+                            r'^[w\s]*(\d{4}):\s+(.+?)\s*\(([A-Z]{2,4})\)\s*$',
                             line_text_norm.strip()
                         )
                         if header_match:
@@ -200,6 +206,41 @@ def extract_section_b(pdf_path: str) -> list[HospitalEntry]:
                                 'section': 'Systems',
                                 'target': 'system',
                             }
+                        else:
+                            # Multi-line header: name is too long, type code
+                            # is on the next bold line(s). Look ahead to find
+                            # the line ending with (XX).
+                            combined_text = line_text_norm.strip()
+                            for ahead_i in range(line_i + 1, len(block_lines)):
+                                ahead_line = block_lines[ahead_i]
+                                ahead_spans = ahead_line["spans"]
+                                ahead_bold = any(
+                                    (bool(s["flags"] & 16) or "Bold" in s.get("font", ""))
+                                    and s.get("size", 0) >= 7.7
+                                    for s in ahead_spans
+                                )
+                                if not ahead_bold:
+                                    break
+                                ahead_text = normalize_text(
+                                    "".join(s["text"] for s in ahead_spans)
+                                ).strip()
+                                combined_text += " " + ahead_text
+                                skip_line_indices.add(ahead_i)
+                                # Check if combined text now matches
+                                header_match = re.match(
+                                    r'^[w\s]*(\d{4}):\s+(.+?)\s*\(([A-Z]{2,4})\)\s*$',
+                                    combined_text
+                                )
+                                if header_match:
+                                    header_info = {
+                                        'name': header_match.group(2).strip(),
+                                        'id': header_match.group(1),
+                                        'type': header_match.group(3),
+                                        'page_num': page_num,
+                                        'section': 'Systems',
+                                        'target': 'system',
+                                    }
+                                    break
 
                 elif page_type == 'networks':
                     # Detect network organization headers:
@@ -302,9 +343,25 @@ def parse_system_address_block(lines: list[str], start_idx: int, end_idx: int) -
             if line.startswith(state_name + ':'):
                 break
         else:
-            # Stop at hospital entry
-            if re.match(r'^[A-Z].*\([OLC],\s*\d+\s*beds?\)', line):
+            # Stop at hospital entry (beds on same line)
+            if re.match(r'^[A-Z].*\((?:[OLCS]|PART),\s*\d+\s*beds?\)', line):
                 break
+            # Stop at wrapped hospital entry (beds on next 1-2 lines)
+            if re.match(r'^[A-Z]', line):
+                look = line
+                for la in range(1, 3):
+                    if i + la >= end_idx:
+                        break
+                    nl = lines[i + la].strip()
+                    if not nl:
+                        continue
+                    look += " " + nl
+                    if re.search(r'\((?:[OLCS]|PART),\s*\d+\s*beds?\)', look):
+                        break
+                else:
+                    look = None  # didn't find bed pattern
+                if look and re.search(r'\((?:[OLCS]|PART),\s*\d+\s*beds?\)', look):
+                    break
             block_text += " " + line
             i += 1
             continue
@@ -414,17 +471,55 @@ def parse_systems(lines: list[str], system_headers: list[dict]) -> list[Hospital
                 continue
 
             # Check for hospital entry: "HOSPITAL NAME (O, XX beds) address..."
-            if re.match(r'^[A-Z].*\([OLC],\s*\d+\s*beds?\)', line):
-                hospital_text = line
-                i += 1
-                more_text, i = collect_hospital_text(lines, i, sys_end)
-                hospital_text = hospital_text + " " + more_text
+            # The bed pattern may be on the same line, or split across 1-2 lines
+            # when the hospital name is very long.
+            if re.match(r'^[A-Z]', line) and not re.match(r'^[w\s]*\d{4}:\s+[A-Z]', line):
+                # Try combining up to 2 following lines to find the bed pattern
+                combined = line
+                lines_consumed = 0
+                found_beds = bool(re.search(
+                    r'\((?:[OLCS]|PART),\s*\d+\s*beds?\)', combined))
 
-                result = parse_hospital_text(hospital_text, current_state, current_state_abbrev)
-                entry = build_entry(sys_hdr, sys_addr, result)
-                if entry.hospital_name:
-                    entries.append(entry)
-                continue
+                if not found_beds:
+                    for lookahead in range(1, 3):
+                        if i + lookahead >= sys_end:
+                            break
+                        next_l = lines[i + lookahead].strip()
+                        if not next_l:
+                            continue
+                        # Stop if next line is a state header, system header,
+                        # summary block, or a new standalone hospital
+                        is_state = any(next_l.startswith(sn + ':')
+                                      for sn in SORTED_STATES)
+                        is_system = bool(re.match(
+                            r'^[w\s]*\d{4}:\s+[A-Z]', next_l))
+                        is_summary = (next_l.startswith('Owned, leased')
+                                     or next_l.startswith('Contract-managed')
+                                     or next_l.startswith('Totals:'))
+                        is_new_hosp = bool(re.match(
+                            r'^[A-Z].*\((?:[OLCS]|PART),\s*\d+\s*beds?\)',
+                            next_l))
+                        if is_state or is_system or is_summary or is_new_hosp:
+                            break
+                        combined += " " + next_l
+                        lines_consumed = lookahead
+                        if re.search(r'\((?:[OLCS]|PART),\s*\d+\s*beds?\)',
+                                    combined):
+                            found_beds = True
+                            break
+
+                if found_beds:
+                    hospital_text = combined
+                    i += 1 + lines_consumed
+                    more_text, i = collect_hospital_text(lines, i, sys_end)
+                    hospital_text = hospital_text + " " + more_text
+
+                    result = parse_hospital_text(
+                        hospital_text, current_state, current_state_abbrev)
+                    entry = build_entry(sys_hdr, sys_addr, result)
+                    if entry.hospital_name:
+                        entries.append(entry)
+                    continue
 
             i += 1
 
@@ -556,9 +651,35 @@ def collect_hospital_text(lines: list[str], i: int, end: int) -> tuple[str, int]
         if re.match(r'^\(.+\)\s*$', line) and ('System' in line or 'Health' in line):
             break
 
-        # Stop at next hospital entry (has beds pattern)
-        if collected and re.match(r'^[A-Z].*\([OLC],\s*\d+\s*beds?\)', line):
+        # Stop at next hospital entry (has beds pattern on same line)
+        if collected and re.match(r'^[A-Z].*\((?:[OLCS]|PART),\s*\d+\s*beds?\)', line):
             break
+
+        # Stop at wrapped hospital entry: line looks like a hospital name
+        # (ALL CAPS start, not address/contact text) and combining with
+        # the next 1-2 lines produces a bed pattern
+        if collected and re.match(r'^[A-Z][A-Z\s\.\'\-&+/]+', line):
+            # Exclude address/contact continuation lines
+            is_continuation = bool(
+                re.match(r'^(Web address|Zip\s|tel\.|www\.)', line, re.IGNORECASE)
+                or re.search(r'(,\s*[A-Z]{2},\s*Zip|beds?\))', line)
+                or re.match(r'^\d', line)
+            )
+            if not is_continuation:
+                look = line
+                for la in range(1, 3):
+                    if i + la >= end:
+                        break
+                    nl = lines[i + la].strip()
+                    if not nl:
+                        continue
+                    look += " " + nl
+                    if re.search(r'\((?:[OLCS]|PART),\s*\d+\s*beds?\)', look):
+                        return collected.strip(), i
+                # Also check if next line starts with bed pattern directly
+                next_l = lines[i + 1].strip() if i + 1 < end else ''
+                if re.match(r'^\((?:[OLCS]|PART),\s*\d+\s*beds?\)', next_l):
+                    return collected.strip(), i
 
         # Stop at next system header
         if re.match(r'^[w\s]*\d{4}:\s+[A-Z]', line):
@@ -608,7 +729,7 @@ def parse_hospital_text(text: str, state: str, state_abbrev: str) -> dict:
     # Match: HOSPITAL NAME (O, 123 beds) address...
     # Handle hospital names that may contain "(PART OF ...)" notation
     hosp_match = re.match(
-        r'^(.+?)\s*\(([OLC]),\s*(\d+)\s*beds?\)\s*(.*)',
+        r'^(.+?)\s*\(([OLCS]|PART),\s*(\d+)\s*beds?\)\s*(.*)',
         text, re.DOTALL
     )
 
