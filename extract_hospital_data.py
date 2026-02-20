@@ -102,12 +102,17 @@ def extract_text_from_pdf(pdf_path: str) -> tuple[list[str], list[dict], dict]:
         left_items = []
         right_items = []
 
+        # Track bold name fragments from lines without provider numbers,
+        # keyed by column side ('left' or 'right') so we merge within same column
+        pending_bold_name = {'left': None, 'right': None}
+
         for block in blocks:
             if block["type"] == 0:  # Text block
                 for line in block["lines"]:
                     spans = line["spans"]
                     bbox = line["bbox"]
                     x, y = bbox[0], bbox[1]
+                    col_side = 'left' if x < col_split else 'right'
 
                     line_text = "".join(span["text"] for span in spans)
 
@@ -143,11 +148,32 @@ def extract_text_from_pdf(pdf_path: str) -> tuple[list[str], list[dict], dict]:
                                 name_text = text.strip()
                                 name_text = name_text.replace('\u2019', "'").replace('\u2018', "'")
                                 if name_text and len(name_text) > 5:
-                                    if re.match(r"^[A-Z][A-Z0-9\s\.'\-\u2013\u2014&,+/]+$", name_text):
+                                    if re.match(r"^[A-Z][A-Z0-9\s\.'\-\u2013\u2014&,+/()]+$", name_text):
                                         bold_name = name_text
                                         found_bold_name = True
                             elif not span_bold and found_bold_name:
                                 rest_text += text
+
+                        # Handle multi-line hospital names: if previous line in
+                        # same column had a bold name fragment without a provider
+                        # number, prepend it to this line's bold name
+                        has_address = (rest_text.strip().startswith(",")
+                                      and re.search(r'\d+\s+[A-Za-z]', rest_text))
+                        if pending_bold_name[col_side] and (provider_num or has_address):
+                            # Merge with pending bold name from previous line
+                            if bold_name:
+                                bold_name = pending_bold_name[col_side] + " " + bold_name
+                            else:
+                                bold_name = pending_bold_name[col_side]
+                            pending_bold_name[col_side] = None
+                        elif bold_name and not provider_num and not has_address:
+                            # Bold name only, no provider number, no address -
+                            # likely the first line of a wrapped hospital name
+                            if not rest_text.strip().startswith("See "):
+                                pending_bold_name[col_side] = bold_name
+                            bold_name = ""  # Don't create entry yet
+                        else:
+                            pending_bold_name[col_side] = None
 
                         # Validate the entry
                         if bold_name:
@@ -167,6 +193,18 @@ def extract_text_from_pdf(pdf_path: str) -> tuple[list[str], list[dict], dict]:
                                     'y': y,
                                     'page_num': page_num,
                                 })
+
+                    # Handle single-span bold lines as potential wrapped name
+                    # prefixes (the name is too long for one line, continuation
+                    # on next line will have the provider number)
+                    if len(spans) == 1:
+                        span = spans[0]
+                        span_bold = bool(span["flags"] & 16) or "Bold" in span.get("font", "")
+                        name_text = span["text"].strip()
+                        if (span_bold and len(name_text) > 5
+                                and re.match(r"^[A-Z][A-Z0-9\s\.'\-\u2013\u2014&,+/()]+$", name_text)
+                                and name_text not in US_STATES):
+                            pending_bold_name[col_side] = name_text
 
                     # Add to column lists
                     if line_text.strip():
