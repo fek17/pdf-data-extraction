@@ -68,17 +68,6 @@ US_STATES = {
     'WISCONSIN', 'WYOMING'
 }
 
-# Words that indicate a hospital name continues on the next line
-CONTINUATION_END_WORDS = {
-    'OF', 'THE', 'AT', 'AND', 'IN', 'FOR', 'WITH', 'BY', 'A', 'AN',
-    'TO', 'OR', '&',
-}
-# Words that typically begin a continuation fragment, not a new hospital name
-CONTINUATION_START_WORDS = {
-    'SYSTEM', 'CENTER', 'CAMPUS', 'DIVISION', 'UNIT', 'BRANCH',
-    'ANNEX', 'PAVILION', 'WING', 'HEALTH',
-}
-
 US_STATES_PATTERN = re.compile(r'^(' + '|'.join(sorted(US_STATES, key=len, reverse=True)) + r')$')
 
 
@@ -117,7 +106,8 @@ def extract_text_from_pdf(pdf_path: str) -> tuple[list[str], list[dict], dict]:
         right_items = []
 
         # Track bold name fragments from lines without provider numbers,
-        # keyed by column side ('left' or 'right') so we merge within same column
+        # keyed by column side ('left' or 'right') so we merge within same column.
+        # Reset each page to prevent stale carry-over across page boundaries.
         pending_bold_name = {'left': None, 'right': None}
 
         for block in blocks:
@@ -164,7 +154,9 @@ def extract_text_from_pdf(pdf_path: str) -> tuple[list[str], list[dict], dict]:
                                 name_text = name_text.replace('\u2019', "'").replace('\u2018', "'")
                                 name_text = name_text.replace('\u2013', '-').replace('\u2014', '-')
                                 if name_text and len(name_text) > 5:
-                                    if re.match(r"^[A-Z][A-Z0-9\s\.'\-&,+/()]+$", name_text):
+                                    # Allow optional leading dash for continuation
+                                    # lines like "– LINCOLN" (normalized to "- LINCOLN")
+                                    if re.match(r"^-?\s*[A-Z][A-Z0-9\s\.'\-&,+/()]+$", name_text):
                                         bold_name = name_text
                                         found_bold_name = True
                             elif not span_bold and found_bold_name:
@@ -176,19 +168,25 @@ def extract_text_from_pdf(pdf_path: str) -> tuple[list[str], list[dict], dict]:
                         # Address detection: a comma after the bold name indicates
                         # an address follows (possibly continuing on the next line).
                         has_address = rest_text.strip().startswith(",")
+                        # Fallback: if bold name wasn't recognized (e.g. started
+                        # with a dash), check non-bold spans directly for comma
+                        if not has_address and not bold_name and pending_bold_name[col_side]:
+                            seen_bold = False
+                            for sp in spans:
+                                sp_bold = bool(sp["flags"] & 16) or "Bold" in sp.get("font", "")
+                                if sp_bold:
+                                    seen_bold = True
+                                elif seen_bold and sp["text"].strip().startswith(","):
+                                    has_address = True
+                                    break
                         if pending_bold_name[col_side] and (provider_num or has_address):
                             if bold_name:
-                                # Both pending name and new bold name exist.
-                                # Decide whether to merge (wrapped name) or
-                                # treat as separate hospitals.
-                                pending_words = pending_bold_name[col_side].split()
-                                last_word = pending_words[-1] if pending_words else ''
-                                first_word = bold_name.split()[0] if bold_name else ''
-                                if (last_word in CONTINUATION_END_WORDS or
-                                        first_word in CONTINUATION_START_WORDS):
-                                    # Looks like a wrapped name - merge
-                                    bold_name = pending_bold_name[col_side] + " " + bold_name
-                                # else: separate hospitals - keep bold_name as-is
+                                # Always merge: pending is only set on the
+                                # immediately preceding line (the else branch
+                                # below clears it for non-consecutive lines),
+                                # so a surviving pending means these lines are
+                                # adjacent parts of the same hospital name.
+                                bold_name = pending_bold_name[col_side] + " " + bold_name
                             else:
                                 bold_name = pending_bold_name[col_side]
                             pending_bold_name[col_side] = None
@@ -230,9 +228,13 @@ def extract_text_from_pdf(pdf_path: str) -> tuple[list[str], list[dict], dict]:
                         name_text = name_text.replace('\u2019', "'").replace('\u2018', "'")
                         name_text = name_text.replace('\u2013', '-').replace('\u2014', '-')
                         if (span_bold and len(name_text) > 5
-                                and re.match(r"^[A-Z][A-Z0-9\s\.'\-&,+/()]+$", name_text)
+                                and re.match(r"^-?\s*[A-Z][A-Z0-9\s\.'\-&,+/()]+$", name_text)
                                 and name_text not in US_STATES):
-                            pending_bold_name[col_side] = name_text
+                            if pending_bold_name[col_side]:
+                                # Merge with existing pending (3+ line names)
+                                pending_bold_name[col_side] += " " + name_text
+                            else:
+                                pending_bold_name[col_side] = name_text
 
                     # Add to column lists
                     if line_text.strip():
