@@ -68,17 +68,6 @@ US_STATES = {
     'WISCONSIN', 'WYOMING'
 }
 
-# Words that indicate a hospital name continues on the next line
-CONTINUATION_END_WORDS = {
-    'OF', 'THE', 'AT', 'AND', 'IN', 'FOR', 'WITH', 'BY', 'A', 'AN',
-    'TO', 'OR', '&',
-}
-# Words that typically begin a continuation fragment, not a new hospital name
-CONTINUATION_START_WORDS = {
-    'SYSTEM', 'CENTER', 'CAMPUS', 'DIVISION', 'UNIT', 'BRANCH',
-    'ANNEX', 'PAVILION', 'WING', 'HEALTH',
-}
-
 US_STATES_PATTERN = re.compile(r'^(' + '|'.join(sorted(US_STATES, key=len, reverse=True)) + r')$')
 
 
@@ -116,8 +105,11 @@ def extract_text_from_pdf(pdf_path: str) -> tuple[list[str], list[dict], dict]:
         left_items = []
         right_items = []
 
-        # Track bold name fragments from lines without provider numbers,
-        # keyed by column side ('left' or 'right') so we merge within same column
+        # Track bold name fragments from lines without provider numbers
+        # or addresses, keyed by column side. A bold-only line (no provider
+        # number, no comma/address) is always the first part of a wrapped
+        # hospital name, since every complete entry has either (XXXXXX) or
+        # a comma-delimited address.
         pending_bold_name = {'left': None, 'right': None}
 
         for block in blocks:
@@ -177,26 +169,21 @@ def extract_text_from_pdf(pdf_path: str) -> tuple[list[str], list[dict], dict]:
                         # an address follows (possibly continuing on the next line).
                         has_address = rest_text.strip().startswith(",")
                         if pending_bold_name[col_side] and (provider_num or has_address):
+                            pending_name = pending_bold_name[col_side]
                             if bold_name:
-                                # Both pending name and new bold name exist.
-                                # Decide whether to merge (wrapped name) or
-                                # treat as separate hospitals.
-                                pending_words = pending_bold_name[col_side].split()
-                                last_word = pending_words[-1] if pending_words else ''
-                                first_word = bold_name.split()[0] if bold_name else ''
-                                if (last_word in CONTINUATION_END_WORDS or
-                                        first_word in CONTINUATION_START_WORDS):
-                                    # Looks like a wrapped name - merge
-                                    bold_name = pending_bold_name[col_side] + " " + bold_name
-                                # else: separate hospitals - keep bold_name as-is
+                                bold_name = pending_name + " " + bold_name
                             else:
-                                bold_name = pending_bold_name[col_side]
+                                bold_name = pending_name
                             pending_bold_name[col_side] = None
                         elif bold_name and not provider_num and not has_address:
-                            # Bold name only, no provider number, no address -
-                            # likely the first line of a wrapped hospital name
+                            # Bold name with no provider number (XXXXXX) and
+                            # no comma/address - name hasn't ended yet, so
+                            # store it for merging with the next line.
                             if not rest_text.strip().startswith("See "):
                                 pending_bold_name[col_side] = bold_name
+                            else:
+                                # "See" cross-reference - clear any stale pending
+                                pending_bold_name[col_side] = None
                             bold_name = ""  # Don't create entry yet
                         else:
                             pending_bold_name[col_side] = None
@@ -233,6 +220,10 @@ def extract_text_from_pdf(pdf_path: str) -> tuple[list[str], list[dict], dict]:
                                 and re.match(r"^[A-Z][A-Z0-9\s\.'\-&,+/()]+$", name_text)
                                 and name_text not in US_STATES):
                             pending_bold_name[col_side] = name_text
+                        elif name_text:
+                            # Non-trivial text that isn't a bold name fragment
+                            # clears any stale pending (e.g., "See" references)
+                            pending_bold_name[col_side] = None
 
                     # Add to column lists
                     if line_text.strip():
