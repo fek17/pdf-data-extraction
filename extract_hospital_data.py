@@ -51,18 +51,32 @@ def normalize_text(text: str) -> str:
     return text
 
 
-# All US state names for header detection
+# All US state and territory names for header detection
 US_STATES = {
-    'ALABAMA', 'ALASKA', 'ARIZONA', 'ARKANSAS', 'CALIFORNIA', 'COLORADO',
-    'CONNECTICUT', 'DELAWARE', 'DISTRICT OF COLUMBIA', 'FLORIDA', 'GEORGIA', 'HAWAII', 'IDAHO',
-    'ILLINOIS', 'INDIANA', 'IOWA', 'KANSAS', 'KENTUCKY', 'LOUISIANA',
-    'MAINE', 'MARYLAND', 'MASSACHUSETTS', 'MICHIGAN', 'MINNESOTA',
+    'ALABAMA', 'ALASKA', 'AMERICAN SAMOA', 'ARIZONA', 'ARKANSAS',
+    'CALIFORNIA', 'COLORADO', 'CONNECTICUT', 'DELAWARE',
+    'DISTRICT OF COLUMBIA', 'FLORIDA', 'GEORGIA', 'GUAM', 'HAWAII',
+    'IDAHO', 'ILLINOIS', 'INDIANA', 'IOWA', 'KANSAS', 'KENTUCKY',
+    'LOUISIANA', 'MAINE', 'MARIANA ISLANDS', 'MARSHALL ISLANDS',
+    'MARYLAND', 'MASSACHUSETTS', 'MICHIGAN', 'MINNESOTA',
     'MISSISSIPPI', 'MISSOURI', 'MONTANA', 'NEBRASKA', 'NEVADA',
     'NEW HAMPSHIRE', 'NEW JERSEY', 'NEW MEXICO', 'NEW YORK',
     'NORTH CAROLINA', 'NORTH DAKOTA', 'OHIO', 'OKLAHOMA', 'OREGON',
-    'PENNSYLVANIA', 'RHODE ISLAND', 'SOUTH CAROLINA', 'SOUTH DAKOTA',
-    'TENNESSEE', 'TEXAS', 'UTAH', 'VERMONT', 'VIRGINIA', 'WASHINGTON',
-    'WEST VIRGINIA', 'WISCONSIN', 'WYOMING'
+    'PENNSYLVANIA', 'PUERTO RICO', 'RHODE ISLAND', 'SOUTH CAROLINA',
+    'SOUTH DAKOTA', 'TENNESSEE', 'TEXAS', 'UTAH', 'VERMONT',
+    'VIRGIN ISLANDS', 'VIRGINIA', 'WASHINGTON', 'WEST VIRGINIA',
+    'WISCONSIN', 'WYOMING'
+}
+
+# Words that indicate a hospital name continues on the next line
+CONTINUATION_END_WORDS = {
+    'OF', 'THE', 'AT', 'AND', 'IN', 'FOR', 'WITH', 'BY', 'A', 'AN',
+    'TO', 'OR', '&',
+}
+# Words that typically begin a continuation fragment, not a new hospital name
+CONTINUATION_START_WORDS = {
+    'SYSTEM', 'CENTER', 'CAMPUS', 'DIVISION', 'UNIT', 'BRANCH',
+    'ANNEX', 'PAVILION', 'WING', 'HEALTH',
 }
 
 US_STATES_PATTERN = re.compile(r'^(' + '|'.join(sorted(US_STATES, key=len, reverse=True)) + r')$')
@@ -137,8 +151,9 @@ def extract_text_from_pdf(pdf_path: str) -> tuple[list[str], list[dict], dict]:
                             span_bold = bool(span["flags"] & 16) or "Bold" in span.get("font", "")
                             text = span["text"]
 
-                            # Skip accreditation symbol spans (single char, non-bold, special fonts)
-                            if len(text.strip()) <= 2 and not span_bold:
+                            # Skip accreditation symbol spans (single char, non-bold)
+                            # but keep commas since they indicate address text
+                            if len(text.strip()) <= 2 and not span_bold and ',' not in text:
                                 continue
 
                             # Check if this is a provider number in parentheses
@@ -147,8 +162,9 @@ def extract_text_from_pdf(pdf_path: str) -> tuple[list[str], list[dict], dict]:
                             elif span_bold and not found_bold_name:
                                 name_text = text.strip()
                                 name_text = name_text.replace('\u2019', "'").replace('\u2018', "'")
+                                name_text = name_text.replace('\u2013', '-').replace('\u2014', '-')
                                 if name_text and len(name_text) > 5:
-                                    if re.match(r"^[A-Z][A-Z0-9\s\.'\-\u2013\u2014&,+/()]+$", name_text):
+                                    if re.match(r"^[A-Z][A-Z0-9\s\.'\-&,+/()]+$", name_text):
                                         bold_name = name_text
                                         found_bold_name = True
                             elif not span_bold and found_bold_name:
@@ -156,13 +172,23 @@ def extract_text_from_pdf(pdf_path: str) -> tuple[list[str], list[dict], dict]:
 
                         # Handle multi-line hospital names: if previous line in
                         # same column had a bold name fragment without a provider
-                        # number, prepend it to this line's bold name
-                        has_address = (rest_text.strip().startswith(",")
-                                      and re.search(r'\d+\s+[A-Za-z]', rest_text))
+                        # number, prepend it to this line's bold name.
+                        # Address detection: a comma after the bold name indicates
+                        # an address follows (possibly continuing on the next line).
+                        has_address = rest_text.strip().startswith(",")
                         if pending_bold_name[col_side] and (provider_num or has_address):
-                            # Merge with pending bold name from previous line
                             if bold_name:
-                                bold_name = pending_bold_name[col_side] + " " + bold_name
+                                # Both pending name and new bold name exist.
+                                # Decide whether to merge (wrapped name) or
+                                # treat as separate hospitals.
+                                pending_words = pending_bold_name[col_side].split()
+                                last_word = pending_words[-1] if pending_words else ''
+                                first_word = bold_name.split()[0] if bold_name else ''
+                                if (last_word in CONTINUATION_END_WORDS or
+                                        first_word in CONTINUATION_START_WORDS):
+                                    # Looks like a wrapped name - merge
+                                    bold_name = pending_bold_name[col_side] + " " + bold_name
+                                # else: separate hospitals - keep bold_name as-is
                             else:
                                 bold_name = pending_bold_name[col_side]
                             pending_bold_name[col_side] = None
@@ -184,7 +210,7 @@ def extract_text_from_pdf(pdf_path: str) -> tuple[list[str], list[dict], dict]:
                             elif bold_name in US_STATES:
                                 pass
                             # Check if it has a provider number or address pattern
-                            elif provider_num or (rest_text.strip().startswith(",") and re.search(r'\d+\s+[A-Za-z]', rest_text)):
+                            elif provider_num or has_address:
                                 hospital_entries.append({
                                     'name': bold_name,
                                     'provider_number': provider_num,
@@ -201,8 +227,10 @@ def extract_text_from_pdf(pdf_path: str) -> tuple[list[str], list[dict], dict]:
                         span = spans[0]
                         span_bold = bool(span["flags"] & 16) or "Bold" in span.get("font", "")
                         name_text = span["text"].strip()
+                        name_text = name_text.replace('\u2019', "'").replace('\u2018', "'")
+                        name_text = name_text.replace('\u2013', '-').replace('\u2014', '-')
                         if (span_bold and len(name_text) > 5
-                                and re.match(r"^[A-Z][A-Z0-9\s\.'\-\u2013\u2014&,+/()]+$", name_text)
+                                and re.match(r"^[A-Z][A-Z0-9\s\.'\-&,+/()]+$", name_text)
                                 and name_text not in US_STATES):
                             pending_bold_name[col_side] = name_text
 
